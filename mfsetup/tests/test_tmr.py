@@ -7,11 +7,13 @@ Some relevant tests are also in the following modules
 test_mf6_tmr_shellmound.py
 """
 from pathlib import Path
+from subprocess import PIPE, Popen
 
 import numpy as np
 import pandas as pd
 import pytest
 from flopy.utils import binaryfile as bf
+from mfexport.zbud import write_zonebudget6_input
 
 from mfsetup.discretization import get_layer
 from mfsetup.grid import get_ij
@@ -23,6 +25,7 @@ from .test_mf6_tmr_shellmound import (
     shellmound_tmr_model,
     shellmound_tmr_model_with_dis,
     shellmound_tmr_model_with_grid,
+    shellmound_tmr_model_with_refined_dis,
     shellmound_tmr_simulation,
 )
 
@@ -160,6 +163,43 @@ def test_get_boundary_heads(shellmound_tmr_model_with_dis, test_data_path):
     df = pd.concat(dfs)
     df['k'], df['i'], df['j'] = list(zip(*df['cellid']))
     j=2
+
+
+def test_get_boundary_fluxes(shellmound_tmr_model_with_refined_dis, test_data_path,
+                             tmpdir, zbud6_exe):
+    """Test mapping cell by cell fluxes from a parent model to well package
+    fluxes around the perimeter of an inset model."""
+    m = shellmound_tmr_model_with_refined_dis
+    boundary_shapefile = test_data_path / 'shellmound/tmr_parent/gis/irregular_boundary.shp'
+    parent_budget_file = test_data_path / 'shellmound/tmr_parent/shellmound.cbc'
+    parent_binary_grid_file = test_data_path / 'shellmound/tmr_parent/shellmound.dis.grb'
+    tmr = TmrNew(m.parent, m, parent_cell_budget_file=parent_budget_file,
+                 inset_parent_period_mapping=m.parent_stress_periods,
+                 parent_binary_grid_file=parent_binary_grid_file,
+                 shapefile=boundary_shapefile
+                 )
+    perimeter_df = tmr.get_inset_boundary_values()
+    m.setup_wel()
+    dfs = []
+    for per, data in m.wel.stress_period_data.data.items():
+        df = pd.DataFrame(data)
+        df['per'] = per
+        dfs.append(df)
+    df = pd.concat(dfs)
+    df['k'], df['i'], df['j'] = list(zip(*df['cellid']))
+
+    # TODO: add checks on the results
+    # this should include zonebudget on the parent
+    inset_footprint_within_parent = tmr.inset_zone_within_parent
+    output_budget_name = Path(m.model_ws).absolute() / m.name
+    write_zonebudget6_input(inset_footprint_within_parent, budgetfile=parent_budget_file,
+                            binary_grid_file=parent_binary_grid_file,
+                            outname=output_budget_name)
+    # run zonebudget
+    process = Popen([str(zbud6_exe), f'{m.name}.zbud.nam'], cwd=Path(m.model_ws).absolute(),
+                 stdout=PIPE, stderr=PIPE)
+    stdout, stderr = process.communicate()
+    assert process.returncode == 0
 
 
 @pytest.mark.skip(reason="still working on this test")

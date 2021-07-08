@@ -6,6 +6,7 @@ the discretization module.
 import collections
 import time
 import warnings
+from pathlib import Path
 
 import geopandas as gp
 import gisutils
@@ -606,7 +607,7 @@ def rasterize(feature, grid, id_column=None,
     trans = grid.transform
 
     kwargs = {}
-    if isinstance(feature, str):
+    if isinstance(feature, str) or isinstance(feature, Path):
         proj4 = get_proj_str(feature)
         kwargs = {'dest_crs': grid.crs}
         kwargs = get_input_arguments(kwargs, shp2df)
@@ -823,7 +824,7 @@ def setup_structured_grid(xoff=None, yoff=None, xul=None, yul=None,
         # move away from the edge of a cell
         xul_mod += (delr_grid * 0.25)
         yul_mod -= (delc_grid * 0.25)
-        # flip back to work coords
+        # flip back to world coords
         xul, yul = parent_model.modelgrid.get_coords(xul_mod, yul_mod)
         # get corresponding cell
         pi, pj = parent_model.modelgrid.intersect(xul, yul)
